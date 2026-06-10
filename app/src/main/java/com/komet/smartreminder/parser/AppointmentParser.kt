@@ -17,28 +17,44 @@ data class ParsedAppointment(
  */
 object AppointmentParser {
 
-    private val appointmentKeywords = listOf(
-        "appointment", "booking", "reservation", "scheduled", "confirmed",
-        "booked", "reminder", "visit", "meeting", "session",
-        "bokat", "bokad", "bokning", "bekräftelse", "tid hos", "besök",
-        "termin", "möte", "påminnelse"
+    // Multi-language appointment keywords - auto-detected
+    private val keywordsByLang = mapOf(
+        "en" to listOf("appointment", "booking", "reservation", "scheduled", "confirmed", "booked", "reminder", "visit", "meeting", "session", "check-in", "check-up"),
+        "sv" to listOf("bokat", "bokad", "bokning", "bekräftelse", "tid hos", "besök", "termin", "möte", "påminnelse", "kallelse", "inbokat", "välkommen till"),
+        "de" to listOf("termin", "buchung", "reservierung", "bestätigt", "vereinbart", "treffen", "sitzung", "erinnerung"),
+        "fr" to listOf("rendez-vous", "réservation", "confirmé", "réunion", "visite", "rappel"),
+        "es" to listOf("cita", "reserva", "confirmado", "reunión", "visita", "recordatorio")
     )
+
+    private val allKeywords = keywordsByLang.values.flatten()
+
+    private fun detectLanguage(text: String): String {
+        val lower = text.lowercase()
+        return keywordsByLang.maxByOrNull { (_, keywords) -> keywords.count { lower.contains(it) } }?.key ?: "en"
+    }
 
     private val datePatterns = listOf(
         Pattern.compile("(\\d{4}-\\d{2}-\\d{2})"),
         Pattern.compile("(\\d{1,2}[/.]\\d{1,2}[/.]\\d{4})"),
         Pattern.compile("(\\d{1,2}[/.]\\d{1,2}[/.]\\d{2})"),
-        Pattern.compile("(\\d{1,2}\\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)\\s+\\d{4})", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|måndag|tisdag|onsdag|torsdag|fredag|lördag|söndag)\\s+(\\d{1,2}[/.]\\d{1,2})", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("(\\d{1,2}\\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember)\\s+\\d{4})", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|måndag|tisdag|onsdag|torsdag|fredag|lördag|söndag|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\\s+(\\d{1,2}[/.]\\d{1,2})", Pattern.CASE_INSENSITIVE)
     )
 
-    private val timePattern = Pattern.compile("(\\d{1,2}[:.:]\\d{2})(?:\\s*(?:am|pm))?", Pattern.CASE_INSENSITIVE)
+    private val timePattern = Pattern.compile("(?:kl[.]?\\s*|at\\s+|um\\s+|à\\s+)?(\\d{1,2}[:.:]\\d{2})(?:\\s*(?:am|pm))?", Pattern.CASE_INSENSITIVE)
 
-    private val locationKeywords = listOf("at ", "location:", "plats:", "address:", "adress:", "venue:", "lokal:")
+    private val locationKeywords = listOf(
+        "at ", "location:", "plats:", "address:", "adress:", "venue:", "lokal:",
+        "ort:", "lieu:", "dirección:", "ubicación:", "standort:"
+    )
+
+    // "tomorrow" in multiple languages
+    private val tomorrowWords = listOf("tomorrow", "imorgon", "morgen", "demain", "mañana")
+    private val todayWords = listOf("today", "idag", "heute", "aujourd'hui", "hoy")
 
     fun isAppointmentText(text: String): Boolean {
         val lower = text.lowercase()
-        return appointmentKeywords.any { lower.contains(it) } && extractDate(text) != null
+        return allKeywords.any { lower.contains(it) } && extractDate(text) != null
     }
 
     fun parse(text: String, source: String = ""): ParsedAppointment? {
@@ -60,13 +76,13 @@ object AppointmentParser {
                 return normalizeDate(raw)
             }
         }
-        // Check for "tomorrow", "idag", "imorgon"
+        // Check for "tomorrow", "idag", "imorgon" etc in multiple languages
         val lower = text.lowercase()
         val today = LocalDate.now()
         return when {
-            lower.contains("tomorrow") || lower.contains("imorgon") ->
+            tomorrowWords.any { lower.contains(it) } ->
                 today.plusDays(1).format(DateTimeFormatter.ISO_LOCAL_DATE)
-            lower.contains("today") || lower.contains("idag") ->
+            todayWords.any { lower.contains(it) } ->
                 today.format(DateTimeFormatter.ISO_LOCAL_DATE)
             else -> null
         }
